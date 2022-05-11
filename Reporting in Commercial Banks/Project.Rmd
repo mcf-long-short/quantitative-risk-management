@@ -1,0 +1,650 @@
+---
+title: "CCyB rate for Serbia for 2021 Q3 - 2022 Q2"
+output: 
+  html_document:
+    toc: true
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = FALSE, warning = FALSE)
+```
+
+
+## CBR Introduction
+
+### Capital requirements
+
+A `capital requirement` (also known as regulatory capital or capital adequacy) is the amount of capital a bank or other financial institution has to have as required by its `financial regulator`. This is usually expressed as a `capital adequacy ratio` of equity as a percentage of risk-weighted assets.
+These requirements are put into place to ensure that financial institutions institutions do not take on excess leverage and risk becoming insolvent.
+The main international effort to establish rules around capital requirements has been the `Basel Accords`, published by the `Basel Committee on Banking Supervision` housed at the `Bank for International Settlements`.
+
+Under `Basel III`, there new changes were introduced for the capital adequacy ratio: 
+
+- `Minimum Common Equity Tier 1` (common stocks and disclosed reserves/retained earnings) increased to `4.5%`, down from 4% in Basel II.
+- `Minimum Tier 1 capital`  increased to `6%` from 4% in Basel II.
+- `Minimum regulatory capital ratio` was left unchanged at `8%`, out of which 6% is Tier 1 capital. 
+
+In addition, `capital buffers` were introduced as additional CET 1 capital that banks
+are obliged to maintain above the regulatory minimum so as to limit systemic risks in
+the financial system.
+
+
+### Capital buffer framework
+
+References:
+  
+- [European Central Banks: "Macroprudential capital buffers – objectives and usability"](https://www.ecb.europa.eu/pub/financial-stability/macroprudential-bulletin/html/ecb.mpbu202010_1~01c4f1a5f4.en.html)
+- [Bank of International Settlements: "Macroprudential policy with capital buffers"](https://www.bis.org/publ/work771.htm)
+- [Deutsche Bundensbank: "Macroprudential measures"](https://www.bundesbank.de/en/tasks/banking-supervision/individual-aspects/macroprudential-measures/macroprudential-measures-622910#tar-2)
+- [National Bank of Serbia: "Capital Buffers"](https://nbs.rs/en/ciljevi-i-funkcije/finansijska-stabilnost/zastitni_slojevi_kapitala/)
+- [National Bank of Serbia: "Capital buffer for a systemically important bank"](https://nbs.rs/en/ciljevi-i-funkcije/finansijska-stabilnost/zastitni_slojevi_kapitala/sistemski-znacajne-banke/)
+
+Basel III addresses a number of shortcomings in the pre-crisis regulatory framework and provides a foundation for a resilient banking system that is able to support the real economy through the economic cycle. Capital buffers play an important role in this respect, as they are inter alia meant to mitigate procyclicality by acting as shock absorbers in times of stress. In the European framework, these buffers include:
+
+- Capital Conservation Buffer (`CCoB`)
+- Countercyclical Capital Buffer (`CCyB`)
+- Buffers for global and other systemically important institutions (`G-SIIs` and `O-SIIs`)
+- Systemic Risk Buffer (`SyRB`). 
+
+The combination of all these buffers constitutes the combined buffer requirement (CBR). 
+Buffers are placed on top of minimum capital requirements to enhance banks’ resilience against shocks.
+Over the medium term, the buffer framework aims to ensure a sound and stable banking system that is able to continuously provide key services to the economy.
+Maintaining lending at the onset of a crisis may help to reduce the amount of capital that will be needed to absorb losses further down the road.
+
+If the banks operate bellow the CBR, financial regulator cannot revoke their banking license but they face automatic restrictions on distributions, including dividends, bonus payments, and coupon payments on Additional Tier 1 instruments.
+
+Avoiding excessive deleveraging by the banking sector in a downturn is important owing to the relevance of aggregate bank balance sheet size for the future path of the economy. As evidenced by the crisis of 2007-09, a shortfall in credit supply (a “credit crunch”) can have material negative effects on GDP growth. Similarly, the economy may be negatively affected if banks withdraw from other activities that are economically relevant (e.g. market making, ownership of central counterparties, lending to other banks).
+
+The first main policy implication is that banks should build up capital buffers during normal times. The idea is to make banks more resilient to loan losses as a way of reducing ex ante the severity of financial crises and of lowering their frequency. Intuitively, a small reduction in loan supply during normal times - because of costly capital buffers - is traded off against a large reduction during times of financial crisis.
+
+The second main policy implication is that banks should be given ample time to rebuild capital buffers following a financial crisis and that regulation should increase bank profitability in that process. The idea is to raise the prospect of future profitability during the financial crisis with a view to increasing a bank's access to outside funding and reducing ex post the severity of a financial crisis. Intuitively, a small reduction in loan supply during the recovery - because of temporarily elevated bank profit margins - is traded off against a large reduction during the financial crisis.
+
+
+## Serbia credit activity and GDP
+
+In this project we will use of linear regression and ARIMA models for forecasting variables
+related to banking sector, as well as the use of HP (Hodrick-Prescott) filter
+for estimation of Countercyclical buffer guide for the Serbia banking sector.
+
+```{r}
+# Importing libraries
+suppressMessages(library(readxl))
+suppressMessages(library(quantmod))
+suppressMessages(library(forecast))
+suppressMessages(library(urca))
+suppressMessages(library(tseries))
+suppressMessages(library(skedastic))
+suppressMessages(library(lmtest))
+suppressMessages(library(mFilter))
+```
+
+
+Dataset that contains quarterly information from `2004 Q1 - 2021 Q3 about credit activity in Serbia and GDP`:
+
+- Credit to household (short and long term), expressed in millions of dinars at the end of period
+- Credit to companies (short and long term), expressed in millions of dinars at the end of period
+- Total credit to private sector, expressed in millions of dinars at the end of period
+- GDP, expressed in millions of dinars as the moving sum of 4 quarters
+- Credit to GDP ratio
+
+```{r}
+credit_data <- read_excel("Student project.xlsx")
+summary(credit_data)
+
+gdp <- ts(credit_data$GDP, frequency = 4, start = 2004)
+credit <- ts(credit_data$`credit to private sector`, frequency = 4, start = 2004)
+credit_to_gdp <- ts(credit_data$`credit to gdp`, frequency = 4, start = 2004)
+```
+
+
+
+```{r}
+plot(credit_to_gdp*100, xlab='Date', ylab='Credit to GDP ratio', main='Credit to GDP ratio (percentage)', type='l', col='blue')
+```
+
+```{r}
+plot(gdp, xlab='Date', ylab='GDP', main='GDP vs Credit (millions of RSD)', type='l', col='blue', ylim = c(200000, 6000000))
+par(new=TRUE)
+lines(credit, xlab='Date', ylab='GDP', type='l', col='red')
+legend(x = "topleft",  box.lwd = 2 , title="EQUATIONS", 
+       legend=c("GDP", "Credit to private sector"), 
+       fill = c("blue","red"))
+```
+
+## Explanatory variables: macroeconomic indicators
+
+For modeling the relationship between the credit activity and the various macroeconomic
+variables, we're decided to use the following indicators:
+
+- Interest rate
+- Inflation rate
+- Real GDP growth rate
+- Wages (average net wage)
+- Number of unemployed (in thousands of people)
+- FX rate (EUR/RSD exchange rate)
+
+```{r}
+macro_data <- read_excel("Macrodata indicators.xlsx")
+summary(macro_data)
+```
+
+## Stationarity testing
+
+#### Target variable: Credit Activity
+```{r}
+credit_modeling <- ts(credit_data$`credit to private sector`, frequency = 4, start = c(2010,2), end=c(2021,2))
+acf(credit_modeling, lag=50)
+```
+
+**Stationarity test for origianal series**:
+
+Another test we can conduct is the Augmented Dickey–Fuller (ADF). It determines if the series has a unit root (a series with a trend line will have a unit root and result in a large p-value). The significance level (p-value) for ADF test is pretty high (99%), so we cannot reject the null hypothesis.
+```{r}
+adf.test(credit_modeling)
+```
+Now, we can test if the time series is level or trend stationary using the Kwiatkowski-Phillips-Schmidt-Shin (KPSS) test. Here we will test the null hypothesis of trend stationarity (a low p-value will indicate a signal that is not trend stationary, has a unit root).
+The significance level (p-value) for KPSS test is really low  (1.6%), so we are rejecting the null hypothesis, which means that this time series has a unit root.
+```{r}
+kpss.test(credit_modeling, null="Trend")
+```
+
+**Stationarity test for differenced series**:
+
+Let's check now with `differencing variable`:
+```{r}
+credit_modeling_diff <- diff(credit_modeling)
+plot(credit_modeling_diff, main='Diff (Credit activity)')
+acf(credit_modeling_diff, lags=100)
+```
+
+Not it looks a bit more like a stationary process. Now we can perform ADF test 
+once again to see if it's a stationary process. We're testing against zero-mean stationarity.
+P-value is 0.247, so we still can't reject the null hypothesis (there is the presence of unit root).
+
+```{r}
+adf.test(credit_modeling_diff)
+```
+If we check the differenced series now with KPSS test, p-value for KPSS test is 0.1, so we are cannot reject the null hypothesis, which means that we cannot prove there is a unit root.
+```{r}
+kpss.test(credit_modeling_diff, null="Level")
+```
+
+**Stationarity test for second difference of the series**:
+
+If we now do the `second difference` of the variable:
+```{r}
+credit_modeling_diff <- diff(credit_modeling, differences = 2)
+plot(credit_modeling_diff, main='Second Diff (Credit activity)')
+acf(credit_modeling_diff, lags=100)
+```
+
+Now let's again perform the ADF test for the second diff.
+We get that the p-value is 0.01, which is bellow the 5% significance level, so we reject the null and conclude that the series is stationary.
+
+```{r}
+adf.test(credit_modeling_diff)
+```
+
+`Second difference of the credit activity is stationary series!`
+
+
+#### Macroecomonic indicator: Real GDP
+
+```{r}
+macro_real_gdp <- ts(macro_data$real_gdp, start=c(2010,2), end=c(2021,2), frequency=4)
+plot(macro_real_gdp, main="Macro indicator: Real GDP")
+acf(macro_real_gdp, lags=50)
+```
+
+On the ADF test we got that the p-value is 0.01, which is bellow the 5% significance level, so we reject the null and conclude that the series is stationary.
+```{r}
+adf.test(macro_real_gdp)
+```
+
+
+
+#### Macroecomonic indicator: Interest rate
+
+```{r}
+macro_interes_rate <- ts(macro_data$`interest rate`, start=c(2010,2), end=c(2021,2), frequency=4)
+plot(macro_interes_rate, main="Macro indicator: Interest rate")
+acf(macro_interes_rate, lags=50)
+```
+
+On the ADF test we got that the p-value is 0.88, so we can't reject the null hypothesis:
+```{r}
+adf.test(macro_interes_rate)
+```
+
+Let's try now with differencing the interest rate:
+
+```{r}
+macro_interes_rate_diff <- diff(macro_interes_rate)
+plot(macro_interes_rate_diff, main="Macro indicator: Diff (Interest rate)")
+acf(macro_interes_rate_diff, lags=50)
+```
+
+On the ADF test we got that the p-value is 0.03, so we can reject the null hypotesis and conclude that the series is stationary.
+```{r}
+adf.test(macro_interes_rate_diff)
+```
+
+`First difference of the interest rate is stationary series!`
+
+
+#### Macro variable: Inflation rate
+
+```{r}
+macro_inflation_rate <- ts(macro_data$`inflation rate`, start=c(2010,2), end=c(2021,2), frequency=4)
+plot(macro_inflation_rate, main="Macro indicator: Inflation rate")
+acf(macro_inflation_rate, lags=50)
+```
+
+On the ADF test we got that the p-value is 0.57, so we can't reject the null hypothesis:
+```{r}
+adf.test(macro_inflation_rate)
+```
+
+Let's try now with differencing the inflation rate:
+
+```{r}
+macro_inflation_rate_diff <- diff(macro_inflation_rate)
+plot(macro_inflation_rate_diff, main="Macro indicator: Diff (Inflation rate)")
+acf(macro_inflation_rate_diff, lags=50)
+```
+
+On the ADF test we got that the p-value is 0.01, so we can reject the null hypotesis and conclude that the series is stationary.
+```{r}
+adf.test(macro_inflation_rate_diff)
+```
+
+`First difference of the interest rate is stationary series!`
+
+
+#### Macro variable: Unemployment number
+
+```{r}
+macro_unemployment <- ts(macro_data$`no unemployed`, start=c(2010,2), end=c(2021,2), frequency=4)
+plot(macro_unemployment, main="Macro indicator: Unemployment number")
+acf(macro_unemployment, lags=50)
+```
+
+This one is quite obvious that it's not stationary. But let's anyway perform the ADF test. We got that the p-value is 0.97, so we can't reject the null hypothesis:
+```{r}
+adf.test(macro_unemployment)
+```
+
+Let's try with unemployment change instead of number of unemployed people (by differencing the variable):
+
+```{r}
+macro_unemployment_diff <- diff(macro_unemployment)
+plot(macro_unemployment_diff, main="Macro indicator: Change in unemployment")
+acf(macro_unemployment_diff, lags=50)
+```
+
+ADF test for unemployment change; we can see that it's still not stationary, so we'll have to do a second diff.
+```{r}
+adf.test(macro_unemployment_diff)
+```
+
+```{r}
+macro_unemployment_diff <- diff(macro_unemployment_diff)
+plot(macro_unemployment_diff, main="Macro indicator: Second Diff (No. Unemployed)")
+acf(macro_unemployment_diff, lags=50)
+```
+
+And finally we got the stationary series.
+```{r}
+adf.test(macro_unemployment_diff)
+```
+
+`Second difference of the unemployment number is stationary series!`
+
+
+#### Macro variable: Average net wage
+
+```{r}
+macro_wage <- ts(macro_data$wages, start=c(2010,2), end=c(2021,2), frequency=4)
+plot(macro_wage, main="Macro indicator: Net wage")
+acf(macro_wage, lags=50)
+```
+
+This one is also quite obvious that it's not stationary. But let's anyway perform the ADF test. We got that the p-value is 0.99, so we can't reject the null hypothesis:
+```{r}
+adf.test(macro_wage)
+```
+
+Let's try with average wage change instead of actual wage number (by differencing the variable):
+
+```{r}
+macro_wage_diff <- diff(macro_wage)
+plot(macro_wage_diff, main="Macro indicator: Change in wages")
+acf(macro_wage_diff, lags=50)
+```
+
+The p-value is still high so we can't reject the null hypothesis and we'll have to do another differencing.
+```{r}
+adf.test(macro_wage_diff)
+```
+
+Second differencing of average net wage:
+```{r}
+macro_wage_diff <- diff(macro_wage_diff)
+plot(macro_wage_diff, main="Macro indicator: Diff (Average Net Wage)")
+acf(macro_wage_diff, lags=50)
+```
+
+Now for the second diff of wage we got the p-value of 0.01 so we can reject the null.
+```{r}
+adf.test(macro_wage_diff)
+```
+
+`Second difference of the average wage is stationary series!`
+
+
+
+### Stationarity summary
+
+
+Here is the summary of stationarity summary and which transformations we need to do for each variable for modeling:
+
+|    Series                               |           Transformation        |
+|-----------------------------------------|:-------------------------------:|
+| **Target: Credit**                      |         Second Diff             | 
+| **Explanatory: Real GDP**               |         Original                | 
+| **Explanatory: Interest rate**          |         First Diff              |
+| **Explanatory: Inflation rate**         |         First Diff              |
+| **Explanatory: Unemployment number**    |         Second Diff             |
+| **Explanatory: Average Net Wage**       |         Second Diff             |
+
+## Modeling
+
+### Multivariate model for forecast
+
+#### Regression model with all marcroeconomics indicators
+
+
+Here we're regressing over transformed variables. 
+
+From the results bellow, we can see that none of the variables is statistically significant (p-value is grater than 5%)
+We cannot reject the null hypothesis for any coefficients and state that they coefficients are different from 0. The F-statistics shows low value with above 5% p-value, which is another proof that there aren't coefficients that are not equal to 0. And as a consequence the adjusted R-squared is also low.
+We can also see that both AIC and BIC are really low (negative), but these values will be used for comparing with other models.
+
+```{r, echo=FALSE}
+num_of_observations <- length(credit_modeling_diff)
+model_all <- lm(credit_modeling_diff ~
+                                macro_real_gdp[1:num_of_observations]
+                                + macro_interes_rate_diff[1:num_of_observations]
+                                + macro_inflation_rate_diff[1:num_of_observations]
+                                + macro_unemployment_diff
+                                + macro_wage_diff)
+summary(model_all)
+cat(paste("AIC: ",toString(round(AIC(model_all), digits = 3))))
+cat('\n')
+cat(paste("BIC: ",toString(round(BIC(model_all), digits = 3))))
+```
+
+Let's now try to perform the same regression, not with transformed variables, but with the original ones.
+In the model summary bellow you may see that now we have two coefficients that are statistically significant (p-value is < 5%):
+
+- Interest rate
+- Average Net Wage
+
+We can see that F-statistics is high (p-value < 5%) and that adjusted R-squared is quite high with a value of 91.39%!
+
+```{r, echo=FALSE}
+modell_two_tranfrormed <- lm(credit_modeling ~
+                                macro_real_gdp
+                                + macro_interes_rate
+                                + macro_inflation_rate
+                                + macro_unemployment
+                                + macro_wage)
+summary(modell_two_tranfrormed)
+cat(paste("AIC: ",toString(round(AIC(modell_two_tranfrormed), digits = 3))))
+cat('\n')
+cat(paste("BIC: ",toString(round(BIC(modell_two_tranfrormed), digits = 3))))
+```
+
+#### Regression model with interest rate and average net wage
+
+Now we're doing regression on the target variable - credit activity with interest rate and average net wage as explanatory variables.
+
+In the model summary bellow, we have statistically significant coefficients (p-value < 5%) for both the regressors and the intercept.
+We can reject the null hypothesis and state that these two coefficients are not 0. The F-statistics shows high value with zero p-value, which is another proof that there are some coefficients that are not equal to 0. Ajdusted R-squared is quite high (90.69%), which means high “goodness of fit”.
+
+This model has a slightly lower BIC score compared to the previous one.
+
+This coefficients makes sense:
+
+- `Credit activity is negatively correlated with interest rate` - when the interest rates are lower, it's cheaper to borrow so the credit activity rises.
+- `Credit activity is positively correlated with the salaries` - the higher the wages, the better credit score people have, so they are in the position get loans from the financial institutions.
+
+```{r, echo=FALSE}
+model_two <- lm(credit_modeling ~
+                                + macro_interes_rate
+                                + macro_wage)
+summary(model_two)
+cat(paste("AIC: ",toString(round(AIC(model_two), digits = 3))))
+cat('\n')
+cat(paste("BIC: ",toString(round(BIC(model_two), digits = 3))))
+```
+### Univariate time series model for forecast
+
+Now let's try to fit the univariate time series model that fits the best.
+
+Just by looking at ACF and PACF plot of credit activity, we can see that 
+ACF if infinite and decaying over time and the PCAF has only one significant lag - at one.
+Based on the ARIMA models theoretical properties, we would expect that the best fit model is AR(1).
+
+```{r}
+acf(credit[1:(length(credit) - 3)], lags=10, main="ACF plot - Credit activity")
+pacf(credit[1:(length(credit) - 3)], lags=10, main="PACF plot - Credit activity")
+```
+
+Let's now use auto.arima functionality that will do a grid search over various p, d, q parameters for ARIMA models and give us the 
+best performing model based on the AIC and BIC score.
+
+As we can see bellow that the best performing model is `ARIMA(1,1,0)`, or `AR(1) of the differenced credit activity variable`.
+```{r}
+credit_arima <- ts(credit_data$`credit to private sector`, frequency = 4, start = c(2004,1), end = c(2021,2))
+arima_model <- auto.arima(credit_arima)
+summary(arima_model)
+```
+
+
+### Model checking
+
+#### Regression model
+In general, we must check the residuals. If the model is adequate, the residuals should behave like a white noise.
+
+We can see straight from the ACF plot of residuals that there there is a serial correlation. Significant lags at 1, 2, 3 and 11.
+
+```{r}
+acf(model_two$residuals, lags=30)
+```
+
+
+When performing the Ljung-Box tests for residual independence. 
+we come to the same conclusion - that the p-value for all three tests, using different number of lags,
+is significantly bellow 5%. That means we have to reject the null hypothesis which states: “There is no serial correlation among residuals (the residuals are white noise)”.
+
+That means that the model didn’t capture everything from the data. To get the better model fit we would have to use some other model.
+This is somewhere expected as it credit activity is quite complex to comprehend and understand given everything that is happening across the whole
+economy and over many markets.
+It wouldn't make sense if it could be modeled only two explanatory variables.
+
+That means that the model didn’t capture everything from the data. To get the better model fit we would have to use some other model.
+
+```{r, echo=FALSE}
+Box.test(model_two$residuals, lag=10, type="Ljung-Box", fitdf = 6)
+Box.test(model_two$residuals, lag=20, type="Ljung-Box", fitdf = 6)
+Box.test(model_two$residuals, lag=30, type="Ljung-Box", fitdf = 6)
+```
+
+
+
+#### ARIMA(1,1,0) model
+
+Similarly as for the regression model, let's first plot the ACF of the residuals.
+
+It mostly looks all right, like there isn't any significant serial correlation. There might be some correlation on lag 7. So it's better to perform statistical test to be sure:
+
+```{r}
+acf(arima_model$residuals[1:(length(credit) - 4)])
+```
+
+For both Ljnug-Box tests, with different lags observing, we got the p-value is higher than 5%, which is our significance level for rejection.
+Because of that we can't reject the null hypothesis, meaning the there is no serial correlation among residuals:
+
+```{r, echo=FALSE}
+Box.test(arima_model$residuals[1:(length(credit) - 4)], lag=10, type="Ljung-Box", fitdf = 6)
+Box.test(arima_model$residuals[1:(length(credit) - 4)], lag=20, type="Ljung-Box", fitdf = 6)
+```
+
+We can also run more detailed residual checking:
+
+```{r}
+checkresiduals(arima_model)
+```
+
+
+### Model selection
+
+We had two candidate models:
+
+- ARIMA(1, 1, 0)
+- Liner regression with interest rate and average net salary
+
+We have to reject the linear regression model because of the presence of the serial correlation among residuals.
+
+So the model with we're going forward for forecasting credit activity in Serbia for the next four quarters is is `ARIMA(1, 1, 0)`.
+
+
+## Macroeconomic data forecast
+
+Since we won't be using linear regression for forecasting credit activity, or any other model that uses independent variables,
+we won't need the forecasts for any macroeconomic indicators.
+
+Since we didn't know that we're going to use ARIMA(1,1,0) model at the time of data collection,
+we expected to use some of the macroeconomic indicators, so we're listing the resource where we found forecasts for the indicators
+we chose at the beginning:
+
+- [NBS: Inflation forecast](https://nbs.rs/sr_RS/ciljevi-i-funkcije/monetarna-politika/inflacija/projekcija/)
+- [NBS: GDP forecast](https://www.nbs.rs/export/sites/NBS_site/documents-eng/finansijska-stabilnost/presentation_invest.pdf)
+- [IMF: Real GDP, Inflation rate, Unemployment rate and other indicators forecast](https://www.imf.org/en/Countries/SRB)
+- [NBS: Statistics of Real Sector](https://nbs.rs/sr_RS/drugi-nivo-navigacije/statistika/)
+- [SORC: Number of unemployed](https://www.stat.gov.rs/sr-Latn/oblasti/trziste-rada/anketa-o-radnoj-snazi)
+- [SORC: Net wages](https://publikacije.stat.gov.rs/G2021/HtmlL/G20211322.html)
+- [Trading Economics: macro indicator forecasts for 2021 Q3 and 2022](https://tradingeconomics.com/serbia/forecast)
+
+
+## Forecasting credit activity
+
+We're using ARIMA(1,1,0) to forecast the credit activity for the next four quarters Q3 2021 - Q2 2022.
+
+Here are the forecasted values per quarter:
+```{r}
+forecast <- forecast(arima_model)
+forecast
+```
+
+Let's plot the forecast. We can see that forecasted values follow an upward trend.
+```{r}
+autoplot(forecast)
+```
+
+
+## Credit-to-GDP ratio
+
+Given forecast for the GDP for the next four quarters in the initial dataset:
+```{r}
+credit_data$GDP[(length(credit_data$GDP) - 3): length(credit_data$GDP)]
+```
+
+
+and our forecast for the credit activity for the next four quarters:
+
+```{r}
+credit_len <- length(credit_data$`credit to private sector`)
+credit_data$`credit to private sector`[credit_len-3] <- as.numeric(forecast$mean)[1]
+credit_data$`credit to private sector`[credit_len-2] <- as.numeric(forecast$mean)[2]
+credit_data$`credit to private sector`[credit_len-1] <- as.numeric(forecast$mean)[3]
+credit_data$`credit to private sector`[credit_len] <- as.numeric(forecast$mean)[4]
+credit_data$`credit to private sector`[(credit_len - 3) : credit_len]
+```
+
+
+we're now calculating credit-to-GDP ratio for the next four quarters:
+```{r}
+credit_data$`credit to gdp`[credit_len-3] = credit_data$`credit to private sector`[credit_len - 3] / credit_data$GDP[credit_len-3]
+credit_data$`credit to gdp`[credit_len-2] = credit_data$`credit to private sector`[credit_len - 2] / credit_data$GDP[credit_len-2]
+credit_data$`credit to gdp`[credit_len-1] = credit_data$`credit to private sector`[credit_len - 1] / credit_data$GDP[credit_len-1]
+credit_data$`credit to gdp`[credit_len-0] = credit_data$`credit to private sector`[credit_len ] / credit_data$GDP[credit_len]
+credit_data$`credit to gdp`[(credit_len - 3) : credit_len]
+```
+
+```{r}
+plot(credit_data$`credit to gdp`*100, xlab='Date', ylab='Credit to GDP ratio', main='Credit to GDP ratio (percentage)', type='l', col='blue')
+```
+
+
+## Credit-to-GDP gap
+
+In this section we'll calculate Credit-to-GDP gap, denoted as GAPt. Is measured and calculated as: `GAPt = RATIOt − TRENDt`, where:
+ 
+ - t = end-period date, the period being one quarter;
+ - RATIOt = (CREDITt / (GDPt + GDPt-1 + GDPt-2 + GDPt-3)) × 100 %;
+ - GDPt = gross domestic product in quarter t;
+ - CREDITt = broad measure of the stock of credit to the private non-financial outstanding at the end of quarter t;
+ - TRENDt = recursive Hodrick-Prescott filtered trend of the RATIO with a smoothing parameter, lambda of 400 000 (*).
+
+Hodrick-Prescott is often used in macroeconomics to extract a trend component from time series, by removing short-term
+fluctuations associated with business cycle. Removal of short-term fluctuations reveals long-term-trend.
+
+Parameter lambda in the HP filter is used to smoothen the time series to reveal long-term trend. As per given methodology
+we're going to set value for lambda at 400 000.
+
+
+Credit-to-GDP ratio:
+
+```{r}
+RATIO <-  ts(credit_data$`credit to gdp`, start = c(2004, 1), end = c(2022, 2), frequency = 4)
+print(RATIO)
+```
+
+Credit-to-GDP gap plot:
+
+```{r}
+trend <- hpfilter(RATIO, freq = 400000, type = "lambda", drift = FALSE)
+plot(trend)
+```
+
+
+Credit-to-GDP gap for next four quarters:
+```{r}
+trend
+```
+
+As we can see the values for the credit-to-GDP gap in the following four quarters are:
+
+- 2021 Q3 = -0.031
+- 2021 Q4 = -0.059
+- 2022 Q1 = -0.084
+- 2022 Q2 = -0.106
+
+
+## CCyB rate for 2021 Q3 - 2022 Q2
+
+Using Countercyclical buffer guide decide we now have to decide the level of CCB
+rate to be applied in Serbia for the following four quarters.
+
+Let's recap the methodology for calculating the CCyB rate:
+
+- If GAPt ≤ L, the benchmark buffer rate is zero,
+- If GAPt ≥ H, the benchmark buffer rate is at 2,5 %,
+- Between L and H the benchmark buffer rate is linearly interpolated and equals to (0,3125 × GAPt - 0,625)
+- * L = 2 percentage points is the lower threshold/ H = 10 percentage points is the upper threshold
+
+In our forecasted credit-to-GDP gap ration, we have that it's currently under the
+long-term trend and way bellow the the 2% lower benchmark reference, so we can determine that the 
+`CCyB rate should be set at 0% for the next four quarters in Serbia`.
