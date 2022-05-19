@@ -28,8 +28,11 @@ In the `Convertable Bonds/` directory you may find Jupyter Notebooks containing 
 - Mandatory Convertible Bonds (PERCS and DECS) pricing
 - Convertible Bond structuring and greeks
 
+## Running Jupyter Notebook
+We recommend viewing and running notebook files with [Google Collab](https://colab.research.google.com/notebooks/intro.ipynb?utm_source=scs-index),
+so you won't have to manage any of the python requirements compared with running them locally. 
+
 <hr/>
 
-`Note`: These Jupyter Notebooks are created with [Google Colab](https://colab.research.google.com/).
 
 This repository represents group project work for course in `Quantitative Risk Management` for advanced degree [Masters in Computational Finance, Union University](http://mcf.raf.edu.rs/).
